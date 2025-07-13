@@ -3,6 +3,8 @@
 #include <bitset>
 #include <math.h>
 
+#include <SFML/Window.hpp>
+
 //a tak tile is represented with a uint64_t with the bits WXYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYZZZZZZ where:
 //W = 1 if a Capstone is on top
 //X = 1 if a Wall is on top
@@ -27,13 +29,13 @@ static bool IsWhiteOnTop(uint64_t tile)
 static bool IsCapstoneOnTop(uint64_t tile) 
 {
     //shifts the capstone on the top bit to first position and masks away everything else
-    return (tile >> 63) & 1;
+    return tile & 0x8000000000000000;
 }
 
 static bool IsWallOnTop(uint64_t tile) 
 {
     //shifts the wall on the top bit to first position and masks away everything else
-    return 1 == ((tile >> 62) & 1);
+    return tile & 0x4000000000000000;
 }
 
 //Checks which pieces count towards a colors roads, returns a uint32_t which is used kind of like a 5x5 bool array wasting 7 bits
@@ -61,6 +63,7 @@ static uint32_t Conductive(uint64_t board[5][5], bool isWhite)
 //Checks if a color has completed a road
 static bool finishedRoad(uint32_t board) 
 {
+    /*
     //there's probably a better way
     for (int first = 0; first < 5; first++)
     {
@@ -246,6 +249,10 @@ static bool finishedRoad(uint32_t board)
                 }
             }
         }
+
+        
+
+        return false;
     }
 
     for (int first = 0; first < 5; first++)
@@ -433,8 +440,102 @@ static bool finishedRoad(uint32_t board)
             }
         }
     }
+    */
 
-    return false;
+    //I found a better way
+
+    //connective boards for max amount of non touching roads:
+    //1  0  2  0  3
+    //0  4  0  5  0
+    //6  0  7  0  8
+    //0  9  0  10 0
+    //11 0  12 0  13
+    uint32_t connected[13] = { 0,0,0,0,0,0,0,0,0,0,0,0,0 };
+
+    //the amount of connective boards currently used
+    int amount = -1;
+
+
+    for (int y = 0; y < 8; y++)
+    {
+        //saves which pieces on a row count towards a road and are connected
+        uint32_t row = 0;
+
+        for (int x = 0; x < 8; x++)
+        {
+            if ((board >> (x + y * 5)) & 1) 
+            {
+                row |= 1 << x;
+            }
+            else if (row)
+            {
+                if (y)
+                {
+                    bool alone = true;
+
+                    for (int xCheck = 0; xCheck < 8; xCheck++)
+                    {
+                        if ((row >> xCheck) & 1)
+                        {
+                            for (int i = 0; i <= amount; i++)
+                            {
+                                if ((connected[i] >> (xCheck + (y - 1) * 5)) & 1) 
+                                {
+                                    connected[i] |= row << y * 5;
+
+                                    alone = false;
+                                }
+                            }
+                        }
+                    }
+
+                    if (alone) 
+                    {
+                        amount++;
+                        connected[amount] |= row << y * 5;
+                    }
+                }
+                else
+                {
+                    amount++;
+                    connected[amount] |= row;
+                }
+
+                row = 0;
+            }
+        }
+    }
+
+    //checks if any of the boards are overlaping, if they are they get OR:ed together. Otherwise it can't recoginse things like this as a win:
+    //1 1 0 1 1
+    //0 1 1 1 0
+    //0 0 0 0 0
+    //0 0 0 0 0
+    //0 0 0 0 0
+    for (int i = 0; i <= amount; i++) 
+    {
+        for (int j = 0; j <= amount; j++)
+        {
+            if (connected[i] & connected[j]) 
+            {
+                connected[i] |= connected[j];
+                connected[j] |= connected[i];
+            }
+        }
+    }
+
+    //checks if any of the connected boards have a road on both of either opposing sides
+    bool won = false;
+    for (int i = 0; i <= amount; i++)
+    {
+        if (((connected[i] & 0b00000000000000000000000000011111) && (connected[i] & 0b00000001111100000000000000000000)) || ((connected[i] & 0b00000000000100001000010000100001) && (connected[i] & 0b00000001000010000100001000010000)))
+        {
+            won = true;
+            break;
+        }
+    }
+
+    return won;
 }
 
 //currently just testing stuff
